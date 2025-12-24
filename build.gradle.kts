@@ -45,7 +45,7 @@ dependencies {
     compileOnly(files("../ARM-Guilds-Bridge/build/libs/ARM-Guilds-Bridge-1.0.0.jar"))
 
     // LumaGuilds (for guild data)
-    compileOnly(files("../bell-claims/build/libs/LumaGuilds-0.6.1.jar"))
+    compileOnly(files("../bell-claims/build/libs/LumaGuilds-0.6.2.jar"))
 }
 
 tasks {
