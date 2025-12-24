@@ -31,7 +31,7 @@ public final class ItemShopsPlugin extends JavaPlugin {
     public dev.enthusia.itemshops.region.MarketRegionManager market(){ return marketManager; }
 
     private GuildShopIntegration guildShopIntegration;
-    public dev.enthusia.itemshops.region.MarketRegionManager market(){ return marketManager; }
+    public GuildShopIntegration guildShops(){ return guildShopIntegration; }
 
     private final Map<UUID, Long> breakDeleteExpiry = new ConcurrentHashMap<>();
     private final java.util.Set<UUID> adminViewEnabled = ConcurrentHashMap.newKeySet();
