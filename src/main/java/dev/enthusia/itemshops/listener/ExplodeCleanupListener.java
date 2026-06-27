@@ -31,9 +31,11 @@ public final class ExplodeCleanupListener implements Listener {
             }
             if (b.getState() instanceof Container) {
                 var uni = mgr.unifyContainerPos(b);
-                for (Shop s : mgr.shopsOn(uni)) if (!toRemove.contains(s)) toRemove.add(s);
+                if (uni != null) {
+                    for (Shop s : mgr.shopsOn(uni)) if (!toRemove.contains(s)) toRemove.add(s);
+                }
             }
         }
-        for (Shop s : toRemove) mgr.deleteShop(s);
+        for (Shop s : toRemove) mgr.deleteShop(s, ShopManager.RemovalReason.EXPLOSION, null);
     }
 }

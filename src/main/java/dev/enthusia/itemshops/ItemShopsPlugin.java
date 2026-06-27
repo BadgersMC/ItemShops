@@ -58,7 +58,7 @@ public final class ItemShopsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ContainerStockListener(shopManager), this);
         getServer().getPluginManager().registerEvents(new ContainerAccessListener(this, shopManager), this);
         getServer().getPluginManager().registerEvents(new ExplodeCleanupListener(shopManager), this);
-        getServer().getPluginManager().registerEvents(new HopperControlListener(shopManager), this);
+        getServer().getPluginManager().registerEvents(new HopperControlListener(this, shopManager), this);
         vaultManager = new dev.enthusia.itemshops.vault.VaultManager(this);
         marketManager = new dev.enthusia.itemshops.region.MarketRegionManager(this);
         guildShopIntegration = new GuildShopIntegration(this);
@@ -140,8 +140,10 @@ public final class ItemShopsPlugin extends JavaPlugin {
         reloadConfig();
         YamlLoader.mergeDefaults(this, "messages.yml");
         YamlLoader.reload(this, "messages.yml");
+        storage.cancelPendingSave();
         storage.reloadFile();
         if (marketManager != null) marketManager.reload();
+        if (shopManager != null) shopManager.startSignUpdateScheduler();
 
         storage.saveAll(shopManager);
         storage.loadAll(shopManager);

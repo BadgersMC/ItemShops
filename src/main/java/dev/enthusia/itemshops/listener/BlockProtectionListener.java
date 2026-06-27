@@ -49,8 +49,10 @@ public final class BlockProtectionListener implements Listener {
 
         if (b.getState() instanceof Container) {
             Pos uni = mgr.unifyContainerPos(b);
+            if (uni == null) return;
             var shops = mgr.shopsOn(uni);
             if (!shops.isEmpty()) {
+                boolean denyNonOwnerBreak = plugin.getConfig().getBoolean("safety.deny-non-owner-break", true);
                 boolean canBreak = p.hasPermission("itemshops.break.others")
                         || plugin.isBreakOthersActive(p.getUniqueId())
                         || shops.stream().allMatch(s -> s.owner().equals(p.getUniqueId()));
@@ -62,8 +64,10 @@ public final class BlockProtectionListener implements Listener {
                     }
                 }
                 if (!canBreak) {
-                    e.setCancelled(true);
-                    p.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
+                    if (denyNonOwnerBreak) {
+                        e.setCancelled(true);
+                        p.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
+                    }
                     return;
                 }
                 for (Shop s : shops) mgr.deleteShop(s);

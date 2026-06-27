@@ -40,6 +40,8 @@ public final class ShopManager {
     
     private final Map<Pos, Shop> bySign = new ConcurrentHashMap<>();
 
+    private final ConcurrentHashMap<Pos, Object> containerLocks = new ConcurrentHashMap<>();
+
     private final Map<UUID, Integer> ownedCounts = new ConcurrentHashMap<>();
 
     
@@ -58,8 +60,15 @@ public final class ShopManager {
 
     
     public void startSignUpdateScheduler() {
-        this.batchPerRun = Math.max(1, plugin.getConfig().getInt("sign-update.batch-per-run", 200));
-        this.runDelayTicks = Math.max(1L, plugin.getConfig().getLong("sign-update.run-delay-ticks", 1L));
+        var cfg = plugin.getConfig();
+        int maxPerTick = cfg.getInt("safety.sign-update.max-per-tick",
+                cfg.getInt("sign-update.max-per-tick",
+                        cfg.getInt("sign-update.batch-per-run", 200)));
+        long periodTicks = cfg.getLong("safety.sign-update.period-ticks",
+                cfg.getLong("sign-update.period-ticks",
+                        cfg.getLong("sign-update.run-delay-ticks", 1L)));
+        this.batchPerRun = Math.max(1, maxPerTick);
+        this.runDelayTicks = Math.max(1L, periodTicks);
     }
     public void stopSignUpdateScheduler() {
         if (drainTask != null) drainTask.cancel();
@@ -143,7 +152,16 @@ public final class ShopManager {
     }
 
     public void incOwner(UUID u){ ownedCounts.merge(u,1,Integer::sum); }
-    public void decOwner(UUID u){ ownedCounts.merge(u,-1,Integer::sum); }
+    public void decOwner(UUID u){ ownedCounts.merge(u, -1, (old, delta) -> Math.max(0, old + delta)); }
+
+    public Object containerLock(Pos container) {
+        if (container == null) return new Object();
+        return containerLocks.computeIfAbsent(container, k -> new Object());
+    }
+
+    public boolean matchExactMeta() {
+        return plugin.getConfig().getBoolean("safety.match-exact-meta", true);
+    }
 
     public void put(Shop s){
         List<Shop> list = byContainer.computeIfAbsent(s.container(), k -> new ArrayList<>());
@@ -153,9 +171,11 @@ public final class ShopManager {
         if (prev != null && prev != s) {
             removeFromContainer(prev);
             decOwner(prev.owner());
+            incOwner(s.owner());
+        } else if (prev == null) {
+            incOwner(s.owner());
         }
 
-        incOwner(s.owner());
         cacheOwnerName(s.owner());
         updateSign(s);
         storage.saveAsync(this);
@@ -261,7 +281,7 @@ public final class ShopManager {
         int remaining = needed;
         for (ItemStack cur : inv.getStorageContents()) {
             if (cur == null || cur.getType().isAir()) continue;
-            if (cur.isSimilar(template)) {
+            if (ItemUtils.matchesSimilar(cur, template, matchExactMeta())) {
                 remaining -= cur.getAmount();
                 if (remaining <= 0) return true;
             }
@@ -313,7 +333,8 @@ public final class ShopManager {
 
     
     public Pos unifyContainerPos(Block containerBlock) {
-        if (containerBlock == null || !(containerBlock.getState() instanceof Container)) {
+        if (containerBlock == null) return null;
+        if (!(containerBlock.getState() instanceof Container)) {
             return Pos.of(containerBlock.getLocation());
         }
         if (containerBlock.getState() instanceof org.bukkit.block.Chest chest) {
@@ -359,15 +380,17 @@ public final class ShopManager {
 
     public int computeTradesAvailable(Shop shop, Block contBlock) {
         if (shop == null || contBlock == null || !(contBlock.getState() instanceof Container cont)) return 0;
-        int stock = ItemUtils.countSimilar(cont.getInventory(), shop.sell());
+        int stock = ItemUtils.countSimilar(cont.getInventory(), shop.sell(), matchExactMeta());
         return stock / Math.max(1, shop.sell().getAmount());
     }
 
     
     public void indexExisting(Shop s) {
-        byContainer.computeIfAbsent(s.container(), k -> new ArrayList<>()).add(s);
-        bySign.put(s.sign(), s);
-        incOwner(s.owner());
+        List<Shop> list = byContainer.computeIfAbsent(s.container(), k -> new ArrayList<>());
+        if (!list.contains(s)) list.add(s);
+        if (bySign.putIfAbsent(s.sign(), s) == null) {
+            incOwner(s.owner());
+        }
     }
 
     
@@ -422,6 +445,8 @@ public final class ShopManager {
     }
 
     public void requestSave() { storage.saveAsync(this); }
+
+    public void requestSaveImmediate() { storage.saveImmediate(this); }
 
     private boolean removeFromContainer(Shop s) {
         List<Shop> list = byContainer.get(s.container());

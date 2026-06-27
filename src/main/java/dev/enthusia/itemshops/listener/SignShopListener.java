@@ -9,9 +9,10 @@ import dev.enthusia.itemshops.manager.ShopManager;
 import dev.enthusia.itemshops.model.Shop;
 import dev.enthusia.itemshops.util.Pos;
 import dev.enthusia.itemshops.util.Texts;
+import org.bukkit.Location;
 import org.bukkit.block.Block;
-import org.bukkit.block.Container;
-import org.bukkit.block.Sign;
+import org.bukkit.block.Container;
+import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -56,15 +57,7 @@ public final class SignShopListener implements Listener {
         if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
             if (shop != null) {
                 e.setCancelled(true);
-                boolean isOwner = p.getUniqueId().equals(shop.owner()) || p.hasPermission("itemshops.admin");
-                boolean isTrusted = shop.trusted().contains(p.getUniqueId());
-                if (isOwner) {
-                    new ShopEditMenu(plugin, mgr, p, shop, true, true).open();
-                } else if (isTrusted) {
-                    new ShopEditMenu(plugin, mgr, p, shop, false, false).open();
-                } else {
-                    p.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
-                }
+                openEditMenu(p, shop);
                 return;
             }
 
@@ -83,6 +76,7 @@ public final class SignShopListener implements Listener {
                 return;
             }
             Pos uni = mgr.unifyContainerPos(container);
+            if (uni == null) return;
             List<Shop> onThis = mgr.shopsOn(uni);
             int limit = plugin.getConfig().getInt("max-shops-per-container", 2);
             if (!onThis.isEmpty()) {
@@ -108,8 +102,7 @@ public final class SignShopListener implements Listener {
         if (shop == null) return;
         e.setCancelled(true);
 
-        boolean isOwner = p.getUniqueId().equals(shop.owner()) || p.hasPermission("itemshops.admin");
-        if (isOwner && p.isSneaking()) { new ShopEditMenu(plugin, mgr, p, shop, true, true).open(); return; }
+        if (p.isSneaking()) { openEditMenu(p, shop); return; }
 
         if (plugin.getConfig().getBoolean("sign.show-stock-on-click", true)) {
             Block cont = shop.container().toLocation() == null ? null : shop.container().toLocation().getBlock();
@@ -117,6 +110,23 @@ public final class SignShopListener implements Listener {
             p.sendMessage(Texts.fmt(plugin.messages(),"info.stock-status","trades", trades));
         }
         new PurchaseMenu(plugin, mgr, p, shop).open();
+    }
+
+    private void openEditMenu(Player p, Shop shop) {
+        Location shopLoc = shop.container().toLocation();
+        boolean isGuildShop = shopLoc != null && plugin.guildShops().isGuildShop(shopLoc);
+        boolean isOwner = p.getUniqueId().equals(shop.owner()) || p.hasPermission("itemshops.admin");
+        boolean isTrusted = shop.trusted().contains(p.getUniqueId());
+        if (isOwner) {
+            new ShopEditMenu(plugin, mgr, p, shop, true, true).open();
+        } else if (isTrusted) {
+            new ShopEditMenu(plugin, mgr, p, shop, false, false).open();
+        } else if (isGuildShop && plugin.guildShops().canEditGuildShopStock(p, shopLoc)) {
+            boolean canPrices = plugin.guildShops().canModifyGuildShopPrices(p, shopLoc);
+            new ShopEditMenu(plugin, mgr, p, shop, canPrices, false).open();
+        } else {
+            p.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
+        }
     }
 
     private void sendShopInfo(Player p, Shop shop) {

@@ -77,13 +77,25 @@ public final class ShopStorage {
         try { cfg.save(file); } catch (IOException e) { plugin.getLogger().severe("Failed saving shops.yml: "+e.getMessage()); }
     }
 
-    public void saveAsync(ShopManager mgr) {
-        if (pendingSaveTask != null) pendingSaveTask.cancel();
-        pendingSaveTask = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            pendingSaveTask = null;
-            saveAll(mgr);
-        }, SAVE_DEBOUNCE_TICKS);
-    }
+    public void saveAsync(ShopManager mgr) {
+        if (pendingSaveTask != null) pendingSaveTask.cancel();
+        pendingSaveTask = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            pendingSaveTask = null;
+            saveAll(mgr);
+        }, SAVE_DEBOUNCE_TICKS);
+    }
+
+    public void saveImmediate(ShopManager mgr) {
+        cancelPendingSave();
+        saveAll(mgr);
+    }
+
+    public void cancelPendingSave() {
+        if (pendingSaveTask != null) {
+            pendingSaveTask.cancel();
+            pendingSaveTask = null;
+        }
+    }
 
     public void loadAll(ShopManager mgr) {
         mgr.clearAll();
@@ -94,21 +106,25 @@ public final class ShopStorage {
         boolean defOut = plugin.getConfig().getBoolean("hoppers.default-allow-out", false);
 
         for (String key : root.getKeys(false)) {
-            ConfigurationSection s = root.getConfigurationSection(key);
-            if (s == null) continue;
-
-            Pos sign = new Pos(
-                    s.getConfigurationSection("sign").getString("world","world"),
-                    s.getConfigurationSection("sign").getInt("x"),
-                    s.getConfigurationSection("sign").getInt("y"),
-                    s.getConfigurationSection("sign").getInt("z")
-            );
-            Pos cont = new Pos(
-                    s.getConfigurationSection("container").getString("world","world"),
-                    s.getConfigurationSection("container").getInt("x"),
-                    s.getConfigurationSection("container").getInt("y"),
-                    s.getConfigurationSection("container").getInt("z")
-            );
+            ConfigurationSection s = root.getConfigurationSection(key);
+            if (s == null) continue;
+
+            ConfigurationSection signSec = s.getConfigurationSection("sign");
+            ConfigurationSection contSec = s.getConfigurationSection("container");
+            if (signSec == null || contSec == null) continue;
+
+            Pos sign = new Pos(
+                    signSec.getString("world","world"),
+                    signSec.getInt("x"),
+                    signSec.getInt("y"),
+                    signSec.getInt("z")
+            );
+            Pos cont = new Pos(
+                    contSec.getString("world","world"),
+                    contSec.getInt("x"),
+                    contSec.getInt("y"),
+                    contSec.getInt("z")
+            );
 
             UUID owner;
             try { owner = UUID.fromString(s.getString("owner")); }
@@ -155,18 +171,22 @@ public final class ShopStorage {
             ConfigurationSection s = root.getConfigurationSection(key);
             if (s == null) continue;
 
-            String w = s.getConfigurationSection("sign").getString("world","world");
-            int x = s.getConfigurationSection("sign").getInt("x");
-            int y = s.getConfigurationSection("sign").getInt("y");
-            int z = s.getConfigurationSection("sign").getInt("z");
-            if (!signPos.world.equals(w) || signPos.x != x || signPos.y != y || signPos.z != z) continue;
-
-            Pos cont = new Pos(
-                    s.getConfigurationSection("container").getString("world","world"),
-                    s.getConfigurationSection("container").getInt("x"),
-                    s.getConfigurationSection("container").getInt("y"),
-                    s.getConfigurationSection("container").getInt("z")
-            );
+            ConfigurationSection signSec = s.getConfigurationSection("sign");
+            ConfigurationSection contSec = s.getConfigurationSection("container");
+            if (signSec == null || contSec == null) continue;
+
+            String w = signSec.getString("world","world");
+            int x = signSec.getInt("x");
+            int y = signSec.getInt("y");
+            int z = signSec.getInt("z");
+            if (!signPos.world.equals(w) || signPos.x != x || signPos.y != y || signPos.z != z) continue;
+
+            Pos cont = new Pos(
+                    contSec.getString("world","world"),
+                    contSec.getInt("x"),
+                    contSec.getInt("y"),
+                    contSec.getInt("z")
+            );
 
             UUID owner;
             try { owner = UUID.fromString(s.getString("owner")); }

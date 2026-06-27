@@ -143,15 +143,17 @@ public final class PurchaseMenu implements ShopMenu {
         inv.setItem(STATUS_SLOT, status);
     }
 
+    private boolean exactMeta() { return mgr.matchExactMeta(); }
+
     private int computeStockTrades() {
         Block contBlock = shop.container().toLocation() == null ? null : shop.container().toLocation().getBlock();
         if (contBlock == null || !(contBlock.getState() instanceof Container cont)) return 0;
-        int stock = ItemUtils.countSimilar(cont.getInventory(), shop.sell());
+        int stock = ItemUtils.countSimilar(cont.getInventory(), shop.sell(), exactMeta());
         return stock / Math.max(1, shop.sell().getAmount());
     }
 
     private int computeAffordableTrades() {
-        int have = ItemUtils.countSimilar(buyer.getInventory(), shop.cost());
+        int have = ItemUtils.countSimilar(buyer.getInventory(), shop.cost(), exactMeta());
         return have / Math.max(1, shop.cost().getAmount());
     }
 
@@ -176,8 +178,8 @@ public final class PurchaseMenu implements ShopMenu {
         ItemStack sellT = shop.sell();
         ItemStack costT = shop.cost();
 
-        int tradesByStock   = ItemUtils.countSimilar(contInv, sellT) / Math.max(1, sellT.getAmount());
-        int tradesByWallet  = ItemUtils.countSimilar(buyerInv, costT) / Math.max(1, costT.getAmount());
+        int tradesByStock   = ItemUtils.countSimilar(contInv, sellT, exactMeta()) / Math.max(1, sellT.getAmount());
+        int tradesByWallet  = ItemUtils.countSimilar(buyerInv, costT, exactMeta()) / Math.max(1, costT.getAmount());
         int capacityBuyer   = computeCapacity(buyerInv, sellT) / Math.max(1, sellT.getAmount());
 
         
@@ -244,9 +246,8 @@ public final class PurchaseMenu implements ShopMenu {
             return;
         }
 
-        var lock = shop.lock();
-        lock.lock();
-        try {
+        Object lock = mgr.containerLock(shop.container());
+        synchronized (lock) {
             Block contBlock = shop.container().toLocation() == null ? null : shop.container().toLocation().getBlock();
             if (contBlock == null || !(contBlock.getState() instanceof Container cont)) {
                 buyer.sendMessage(Texts.msg(plugin.messages(), "errors.unsafe"));
@@ -265,50 +266,69 @@ public final class PurchaseMenu implements ShopMenu {
             String regionId = shopLoc != null ? shopLoc.getWorld().getName() + ":" + shopLoc.getBlockX() + ":" + shopLoc.getBlockY() + ":" + shopLoc.getBlockZ() : "unknown";
             String worldName = shopLoc != null ? shopLoc.getWorld().getName() : "unknown";
 
-            PreShopTransactionEvent preEvent = new PreShopTransactionEvent(buyer, regionId, worldName, shop.sell(), trades, 0.0);
+            ItemStack sellT = shop.sell();
+            ItemStack costT = shop.cost();
+            int sellAmt = sellT.getAmount() * trades;
+            int costAmt = costT.getAmount() * trades;
+
+            double originalPrice = plugin.guildShops().calculateCurrencyValue(costT, costAmt);
+            PreShopTransactionEvent preEvent = new PreShopTransactionEvent(buyer, regionId, worldName, shop.sell(), trades, originalPrice);
             Bukkit.getPluginManager().callEvent(preEvent);
 
             if (preEvent.isCancelled()) {
                 return;
             }
 
-            Inventory contInv = cont.getInventory();
-            ItemStack sellT = shop.sell(); int sellAmt = sellT.getAmount() * trades;
-            ItemStack costT = shop.cost(); int costAmt = costT.getAmount() * trades;
+            double effectivePrice = preEvent.getModifiedPrice() != 0.0
+                    ? preEvent.getModifiedPrice()
+                    : originalPrice;
 
-            
-            int stock = ItemUtils.countSimilar(contInv, sellT);
+            Inventory contInv = cont.getInventory();
+
+            int stock = ItemUtils.countSimilar(contInv, sellT, exactMeta());
             if (stock < sellAmt) { buyer.sendMessage(Texts.msg(plugin.messages(), "errors.stock-empty")); return; }
 
             Inventory buyerInv = buyer.getInventory();
-            int have = ItemUtils.countSimilar(buyerInv, costT);
+            int have = ItemUtils.countSimilar(buyerInv, costT, exactMeta());
             if (have < costAmt) { buyer.sendMessage(Texts.msg(plugin.messages(), "errors.payer-lacks")); return; }
 
-            if (!ItemUtils.canFit(buyerInv, sellT, sellAmt)) { buyer.sendMessage(Texts.msg(plugin.messages(), "errors.buyer-space")); return; }
+            if (!ItemUtils.canFit(buyerInv, sellT, sellAmt, exactMeta())) {
+                buyer.sendMessage(Texts.msg(plugin.messages(), "errors.buyer-space"));
+                return;
+            }
 
-            
-            var removedFromCont  = ItemUtils.removeSimilar(contInv, sellT, sellAmt);
-            if (removedFromCont.isEmpty()) { buyer.sendMessage(Texts.msg(plugin.messages(), "errors.transaction-failed")); return; }
-
-            var removedFromBuyer = ItemUtils.removeSimilar(buyerInv, costT, costAmt);
-            if (removedFromBuyer.isEmpty()) {
-                ItemUtils.rollbackRemove(contInv, sellT, removedFromCont);
+            ItemUtils.RemoveResult removedFromCont = ItemUtils.removeSimilar(contInv, sellT, sellAmt, exactMeta());
+            if (!removedFromCont.isComplete(sellAmt)) {
                 buyer.sendMessage(Texts.msg(plugin.messages(), "errors.transaction-failed"));
                 return;
             }
 
-            
-            ItemUtils.addExact(buyerInv, sellT, sellAmt);
+            ItemUtils.RemoveResult removedFromBuyer = ItemUtils.removeSimilar(buyerInv, costT, costAmt, exactMeta());
+            if (!removedFromBuyer.isComplete(costAmt)) {
+                ItemUtils.rollbackRemove(contInv, sellT, removedFromCont.stacks());
+                buyer.sendMessage(Texts.msg(plugin.messages(), "errors.transaction-failed"));
+                return;
+            }
 
-            
-            vault.deposit(shop.owner(), costT, costAmt);
+            ItemUtils.addExact(buyerInv, sellT, sellAmt, exactMeta());
 
-            // Fire PostShopTransactionEvent
-            PostShopTransactionEvent postEvent = new PostShopTransactionEvent(buyer, shop.owner(), regionId, worldName, shop.sell(), trades, 0.0);
+            boolean guildRouted = false;
+            if (shopLoc != null && plugin.guildShops().isGuildShop(shopLoc)) {
+                if (effectivePrice > 0.0) {
+                    guildRouted = plugin.guildShops().routeShopIncome(shopLoc, effectivePrice, buyer);
+                } else {
+                    guildRouted = plugin.guildShops().routeShopIncomeFromBarter(shopLoc, costT, costAmt, buyer);
+                }
+            }
+            if (!guildRouted) {
+                vault.deposit(shop.owner(), costT, costAmt);
+            }
+
+            PostShopTransactionEvent postEvent = new PostShopTransactionEvent(
+                    buyer, shop.owner(), regionId, worldName, shop.sell(), trades, effectivePrice);
             Bukkit.getPluginManager().callEvent(postEvent);
 
-            // Check if stock depleted after transaction
-            int remainingStock = ItemUtils.countSimilar(contInv, sellT);
+            int remainingStock = ItemUtils.countSimilar(contInv, sellT, exactMeta());
             if (remainingStock < sellT.getAmount()) {
                 Bukkit.getPluginManager().callEvent(new dev.enthusia.itemshops.events.ShopStockDepletedEvent(
                         shop, shop.owner(), buyer.getUniqueId()));
@@ -321,8 +341,7 @@ public final class PurchaseMenu implements ShopMenu {
 
             
             mgr.requestSignRefresh(shop);
-        } finally {
-            lock.unlock();
+            mgr.requestSaveImmediate();
         }
     }
 }

@@ -83,7 +83,9 @@ public final class MarketRegionManager {
                 int maxY = (int) m.get("maxY");
                 int maxZ = (int) m.get("maxZ");
                 regions.add(new Region(world, minX, minY, minZ, maxX, maxY, maxZ));
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Failed to parse market region entry " + m + ": " + ex.getMessage());
+            }
         }
     }
 

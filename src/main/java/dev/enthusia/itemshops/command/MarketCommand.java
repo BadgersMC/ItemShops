@@ -72,6 +72,10 @@ public final class MarketCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "clear" -> {
+                if (!sender.hasPermission("itemshops.admin")) {
+                    sender.sendMessage(ItemUtils.colored("&cNo permission."));
+                    return true;
+                }
                 mr.clear();
                 sender.sendMessage(ItemUtils.colored("&aCleared all market regions."));
                 return true;

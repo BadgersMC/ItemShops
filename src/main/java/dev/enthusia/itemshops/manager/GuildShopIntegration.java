@@ -170,6 +170,25 @@ public class GuildShopIntegration {
     }
 
     /**
+     * Route barter shop income to the guild vault by converting cost items to currency value.
+     */
+    public boolean routeShopIncomeFromBarter(Location shopLocation, ItemStack costTemplate, int amount, Player buyer) {
+        if (!enabled || shopLocation == null || costTemplate == null || amount <= 0 || buyer == null) {
+            return false;
+        }
+        if (!isGuildShop(shopLocation)) {
+            return false;
+        }
+        double currencyValue = calculateCurrencyValue(costTemplate, amount);
+        if (currencyValue <= 0) {
+            logger.warning("Guild shop income at " + shopLocation + " has zero currency value for "
+                    + amount + "x " + costTemplate.getType());
+            return false;
+        }
+        return routeShopIncome(shopLocation, currencyValue, buyer);
+    }
+
+    /**
      * Route shop income to the appropriate vault (guild or player).
      * Uses cached Method objects - no reflection lookup overhead.
      */

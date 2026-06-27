@@ -3,8 +3,9 @@ package dev.enthusia.itemshops.model;
 import dev.enthusia.itemshops.util.Pos;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -54,7 +55,7 @@ public final class Shop {
     public void setSell(ItemStack s){ this.sell = s; }
     public void setCost(ItemStack c){ this.cost = c; }
 
-    public Set<UUID> trusted(){ return trusted; }
+    public Set<UUID> trusted(){ return Collections.unmodifiableSet(trusted); }
     public void addTrusted(UUID u){ trusted.add(u); }
     public void removeTrusted(UUID u){ trusted.remove(u); }
 

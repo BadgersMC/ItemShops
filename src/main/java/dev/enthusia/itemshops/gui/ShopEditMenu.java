@@ -6,8 +6,9 @@ import dev.enthusia.itemshops.model.Shop;
 import dev.enthusia.itemshops.util.Bedrock;
 import dev.enthusia.itemshops.util.ItemUtils;
 import dev.enthusia.itemshops.util.Texts;
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
@@ -56,9 +57,23 @@ public final class ShopEditMenu implements ShopMenu {
         render();
     }
 
-    @Override public Inventory getInventory(){ return inv; }
-    @Override public HumanEntity viewer(){ return owner; }
-    public void open(){ owner.openInventory(inv); }
+    @Override public Inventory getInventory(){ return inv; }
+    @Override public HumanEntity viewer(){ return owner; }
+    public void open(){ owner.openInventory(inv); }
+
+    private boolean canManageSettings() {
+        if (owner.getUniqueId().equals(shop.owner()) || owner.hasPermission("itemshops.admin")) return true;
+        Location loc = shop.container().toLocation();
+        return loc != null && plugin.guildShops().isGuildShop(loc)
+                && plugin.guildShops().canEditGuildShopStock(owner, loc);
+    }
+
+    private boolean canModifyPrices() {
+        if (allowTemplateEdit) return true;
+        Location loc = shop.container().toLocation();
+        return loc != null && plugin.guildShops().isGuildShop(loc)
+                && plugin.guildShops().canModifyGuildShopPrices(owner, loc);
+    }
 
     
 
@@ -197,7 +212,7 @@ public final class ShopEditMenu implements ShopMenu {
 
         
         if (raw == SELL_SLOT || raw == COST_SLOT) {
-            if (!allowTemplateEdit) {
+            if (!canModifyPrices()) {
                 e.setCancelled(true);
                 owner.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
                 return true;
@@ -209,12 +224,18 @@ public final class ShopEditMenu implements ShopMenu {
         
         e.setCancelled(true);
 
+        if (raw == HOP_IN_SLOT || raw == HOP_OUT_SLOT || raw == SEARCH_SLOT) {
+            if (!canManageSettings()) {
+                owner.sendMessage(Texts.msg(plugin.messages(), "errors.not-owner"));
+                return true;
+            }
+        }
         if (raw == HOP_IN_SLOT)  { shop.setHopperAllowIn(!shop.isHopperAllowIn());  mgr.requestSave(); render(); return true; }
         if (raw == HOP_OUT_SLOT) { shop.setHopperAllowOut(!shop.isHopperAllowOut()); mgr.requestSave(); render(); return true; }
         if (raw == SEARCH_SLOT)  { shop.setSearchEnabled(!shop.isSearchEnabled());   mgr.requestSave(); render(); return true; }
 
         if (raw == SAVE_SLOT) {
-            if (!allowTemplateEdit) {
+            if (!canModifyPrices()) {
                 owner.sendMessage(ItemUtils.colored("&aSettings updated."));
                 owner.closeInventory();
                 return true;
@@ -251,7 +272,7 @@ public final class ShopEditMenu implements ShopMenu {
 
     @Override
     public boolean onDrag(InventoryDragEvent e) {
-        if (!allowTemplateEdit) {
+        if (!canModifyPrices()) {
             e.setCancelled(true);
             return true;
         }
